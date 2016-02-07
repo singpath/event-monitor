@@ -1,0 +1,258 @@
+#!/usr/bin/env node
+/*eslint no-console: 0*/
+'use strict';
+
+const argparse = require('argparse');
+const camelCase = require('lodash.camelcase');
+const FirebaseTokenGenerator = require('firebase-token-generator');
+const fs = require('fs');
+const singpathLogger = require('@dinoboff/singpath-logger');
+
+const singpathEventMonitor = require('../');
+const singpathAuth = require('../src/singpath/auth');
+const packageJson = require('../package.json');
+
+const SETTINGS_FILE_NAME = './.singpatheventmonitorrc';
+const EPILOG = `Environment variables:
+  SINGPATH_FIREBASE_ID        ID of of the firebase DB to watch.
+  SINGPATH_FIREBASE_SECRET    Firebase auth secret.
+  SINGPATH_EVENT_PUBLIC_ID    Owner's Public id of the events to watch.
+
+Config:
+  You can set the default values with a JSON file named '${SETTINGS_FILE_NAME}' in your
+  working directory.
+
+  Example:
+
+    {
+      "firebaseId": "my-db",
+      "firebaseSecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "eventPublicId": "bob"
+    }
+
+`;
+
+const DEFAULT_SETTINGS = {
+  firebaseId: 'singpath',
+  firebaseSecret: undefined,
+  eventPublicId: undefined,
+  listOnly: false,
+  debugFirebase: false
+};
+
+const ERR_NO_SECRET = `No Firebase auth secret.
+
+Find the auth secret at https://<firebase-id>.firebaseio.com/?page=Admin.
+
+Pass it to the the secret using an environment variable:
+
+    export SINGPATH_FIREBASE_SECRET=xxxxxxx
+
+Or save it in a "${SETTINGS_FILE_NAME}" json file:
+
+    {
+      "firebaseSecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+
+or use the "--firebase-secret xxx" flag
+`;
+
+const ERR_NO_PUBLIC_ID = `No events public id given.
+
+Pass it to the the secret using an environment variable:
+
+    export SINGPATH_EVENT_PUBLIC_ID=bob
+
+Or save it in a "${SETTINGS_FILE_NAME}" json file:
+
+    {
+      "eventPublicId": "bob"
+    }
+
+or use the "--event-public-id bob" flag
+`;
+
+const ERR_NO_FIREBASE_ID = `No Firebase id given.
+
+Pass it to the the secret using an environment variable:
+
+    export SINGPATH_FIREBASE_ID=singpath-play
+
+Or save it in a "${SETTINGS_FILE_NAME}" json file:
+
+    {
+      "firebaseId": "bob"
+    }
+
+or use the "--firebase-id bob" flag
+`;
+
+const ERR_NO_USER = 'The user could not be found';
+
+if (require.main === module) {
+  main();
+}
+
+function main() {
+  envSettings(DEFAULT_SETTINGS).then(
+    settings => fileSettings(SETTINGS_FILE_NAME, settings)
+  ).then(
+    settings => parseArgs(null, settings)
+  ).then(opts => {
+    let level = singpathLogger.INFO;
+
+    if (opts.debug) {
+      level = singpathLogger.DEBUG;
+    } else if (opts.quiet) {
+      level = singpathLogger.ERROR;
+    }
+
+    if (!opts || !opts.firebaseId) {
+      return Promise.reject(new Error(ERR_NO_FIREBASE_ID));
+    }
+
+    const firebase = singpathEventMonitor.firebaseFactory(opts.firebaseId);
+    const logger = singpathLogger({level});
+    const listOnly = opts.listOnly;
+
+    return login(firebase, opts).then(
+      () => singpathEventMonitor.start(opts.eventPublicId, firebase, {logger, listOnly})
+    );
+  }).then(
+    () => process.exit(0),
+    err => {
+      console.error('Unexpected error: %s\n\n%s', err, err.stack);
+      process.exit(1);
+    }
+  );
+}
+
+function parseArgs(args, defaults) {
+  const parser = new argparse.ArgumentParser({
+    version: packageJson.version,
+    addHelp: true,
+    description: 'Monitor event participants solution to update their progress',
+    formatterClass: argparse.RawTextHelpFormatter,
+    epilog: EPILOG
+  });
+
+  parser.addArgument(['-d', '--debug'], {
+    action: 'storeTrue',
+    help: 'print debug messages'
+  });
+
+  parser.addArgument(['--debug-firebase'], {
+    action: 'storeTrue',
+    help: 'print firebase rules debug messages'
+  });
+
+  parser.addArgument(['-s', '--silent'], {
+    action: 'storeTrue',
+    help: 'print only error messages'
+  });
+
+  parser.addArgument(['-i', '--firebase-id'], {
+    help: 'ID of of the firebase DB to watch\n(default: %(defaultValue)s)',
+    defaultValue: defaults.firebaseId,
+    metavar: 'ID'
+  });
+
+  parser.addArgument(['-a', '--firebase-secret'], {
+    help: 'Firebase auth secret\n(default: %(defaultValue)s)',
+    defaultValue: defaults.firebaseSecret,
+    metavar: 'SECRET',
+    required: !defaults.firebaseSecret
+  });
+
+  parser.addArgument(['-p', '--event-public-id'], {
+    help: 'Owner of the events to watch\n(default: %(defaultValue)s)',
+    defaultValue: defaults.eventPublicId,
+    metavar: 'ID',
+    required: !defaults.eventPublicId
+  });
+
+  parser.addArgument(['--list-only'], {
+    action: 'storeTrue',
+    help: 'print only events that would be watched.'
+  });
+
+  return Object.assign(
+    {},
+    defaults,
+    camelCaseObject(parser.parseArgs(args))
+  );
+}
+
+function fileSettings(filePath, defaults) {
+  return new Promise((resolve, reject) => {
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(data);
+      }
+    });
+  }).then(
+    data => Object.assign({}, defaults, JSON.parse(data)),
+    () => Object.assign({}, defaults)
+  );
+}
+
+function envSettings(defaults) {
+  const prefix = 'SINGPATH_';
+  const envSettings = Object.keys(process.env).filter(
+    key => key.startsWith(prefix)
+  ).reduce((settings, envKey) => {
+    const key = camelCase(envKey.slice(prefix.length).toLowerCase());
+
+    settings[key] = process.env[envKey];
+
+    return settings;
+  }, {});
+
+  return Promise.resolve(Object.assign({}, defaults, envSettings));
+}
+
+function camelCaseObject(obj) {
+  return Object.keys(obj).reduce((copy, key) => {
+    copy[camelCase(key)] = obj[key];
+    return copy;
+  }, {});
+}
+
+function login(firebase, opts) {
+  if (!opts || !opts.firebaseSecret) {
+    return Promise.reject(new Error(ERR_NO_SECRET));
+  }
+
+  if (!opts.eventPublicId) {
+    return Promise.reject(new Error(ERR_NO_PUBLIC_ID));
+  }
+
+  const tokenGenerator = new FirebaseTokenGenerator(opts.firebaseSecret);
+  const adminToken = tokenGenerator.createToken({uid: 'singpath-event-monitor'}, {admin: true});
+  const auth = new singpathAuth.Auth(firebase);
+
+  return auth.login(adminToken).then(
+    () => auth.findUser(opts.eventPublicId)
+  ).then(snapshot => {
+    const user = snapshot.val();
+
+    if (user === null) {
+      return Promise.reject(new Error(ERR_NO_USER));
+    }
+
+    const userToken = tokenGenerator.createToken({
+      uid: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      isUser: true,
+      isWorker: false,
+      queue: null
+    }, {
+      debug: opts.debug || opts.debugFirebase
+    });
+
+    return auth.login(userToken);
+  });
+}
