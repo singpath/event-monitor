@@ -1,5 +1,7 @@
 # Event monitor
 
+[![Build Status](https://travis-ci.org/singpath/event-monitor.svg?branch=master)](https://travis-ci.org/singpath/event-monitor)
+
 Monitors event participant solution and updates their progress
 
 
