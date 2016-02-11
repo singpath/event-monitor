@@ -4,6 +4,8 @@
  */
 'use strict';
 
+const Rx = require('rx');
+
 const classMentors = require('./singpath/classmentors/index');
 const firebase = require('./singpath/firebase.js');
 
@@ -22,7 +24,10 @@ exports.start = function start(publicId, firebase, opts) {
   });
 
   if (opts.listOnly) {
-    return events$.timeInterval().takeWhile(
+    return Rx.Observable.merge(
+      events$,
+      Rx.Observable.interval(1100)
+    ).takeWhile(
       x => x.interval < 1000
     ).toPromise();
   }
