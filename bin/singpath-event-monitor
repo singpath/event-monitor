@@ -115,7 +115,7 @@ function main() {
     const logger = singpathLogger({level});
     const listOnly = opts.listOnly;
 
-    return login(firebase, opts).then(
+    return login(firebase, logger, opts).then(
       () => singpathEventMonitor.start(opts.eventPublicId, firebase, {logger, listOnly})
     );
   }).then(
@@ -220,7 +220,7 @@ function camelCaseObject(obj) {
   }, {});
 }
 
-function login(firebase, opts) {
+function login(firebase, logger, opts) {
   if (!opts || !opts.firebaseSecret) {
     return Promise.reject(new Error(ERR_NO_SECRET));
   }
@@ -228,6 +228,8 @@ function login(firebase, opts) {
   if (!opts.eventPublicId) {
     return Promise.reject(new Error(ERR_NO_PUBLIC_ID));
   }
+
+  logger.info('Creating token for "%s"...', opts.eventPublicId);
 
   const tokenGenerator = new FirebaseTokenGenerator(opts.firebaseSecret);
   const adminToken = tokenGenerator.createToken({uid: 'singpath-event-monitor'}, {admin: true});
@@ -241,18 +243,24 @@ function login(firebase, opts) {
     if (user === null) {
       return Promise.reject(new Error(ERR_NO_USER));
     }
-
-    const userToken = tokenGenerator.createToken({
+    const data = {
       uid: user.id,
       email: user.email,
       displayName: user.displayName,
       isUser: true,
       isWorker: false,
       queue: null
-    }, {
+    };
+    const userToken = tokenGenerator.createToken(data, {
       debug: opts.debug || opts.debugFirebase
     });
 
+    logger.info('Token created.');
+    logger.debug('token data: %j', data);
+    logger.info('Authenticating firebase request as "%s"...', opts.eventPublicId);
+
     return auth.login(userToken);
-  });
+  }).then(
+    () => logger.info('Authenticated')
+  );
 }
