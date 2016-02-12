@@ -24,6 +24,7 @@ exports.start = function start(publicId, firebase, opts) {
   });
 
   if (opts.listOnly) {
+    cm.$logger.info('Listing user\'s events only...');
     return Rx.Observable.merge(
       events$,
       Rx.Observable.interval(1100)
@@ -34,11 +35,16 @@ exports.start = function start(publicId, firebase, opts) {
 
   const patches$ = cm.events.monitorEventSolutions(events$);
   const ref = cm.$firebase();
+  const origin = ref.toString();
 
-  return patches$.bufferWithTime(500).map(patches => {
+  cm.$logger.info('Starting monitoring events...');
+
+  return patches$.bufferWithTime(500).flatMap(patches => {
     const patch = Object.assign.apply(Object, [{}].concat(patches));
 
-    ref.update(patch);
+    cm.$logger.debug('patching "%s" with "%j"', origin, patch);
+
+    return ref.update(patch);
   }).takeLast(1).toPromise();
 };
 
