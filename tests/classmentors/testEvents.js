@@ -9,12 +9,81 @@ const events = require('../../src/singpath/classmentors/events.js');
 const noop = () => undefined;
 
 describe('classmentors/events', () => {
+  let snapshotFactory;
+
+  beforeEach(() => {
+    snapshotFactory = (val, key, ref) => ({key: () => key, val: () => val, ref: () => ref});
+  });
+
+  describe('Achievements', () => {
+
+    describe('getBadges', () => {
+      let publicId, deps;
+
+      beforeEach(() => {
+        publicId = 'bob';
+        deps = {
+          $services: {
+            codeCombat: {fetchBadges: sinon.stub().returns(Promise.reject())},
+            codeSchool: {fetchBadges: sinon.stub().returns(Promise.reject())}
+          }
+        };
+      });
+
+      afterEach(() => {});
+
+      it('should fetch badge', () => {
+        const achievements = new events.Achievements(publicId, deps);
+        const badges = [];
+
+        achievements.codeCombat = snapshotFactory({id: 'bobCCID'});
+        deps.$services.codeCombat.fetchBadges.withArgs('bobCCID').returns(Promise.resolve(badges));
+
+        return achievements.getBadges('codeCombat').then(
+          actual => expect(actual).to.be(badges)
+        );
+      });
+    });
+
+    describe('badgeCount', () => {
+      let publicId, deps;
+
+      beforeEach(() => {
+        publicId = 'bob';
+        deps = {
+          $services: {
+            codeCombat: {fetchBadges: sinon.stub().returns(Promise.reject())},
+            codeSchool: {fetchBadges: sinon.stub().returns(Promise.reject())}
+          }
+        };
+      });
+
+      afterEach(() => {});
+
+      it('should return badges count of the user for all services', () => {
+        const achievements = new events.Achievements(publicId, deps);
+
+        achievements.spProblems = {problemCount: sinon.stub().returns(Promise.resolve({started: 8, solved: 4}))};
+        achievements.codeCombat = snapshotFactory({id: 'bobCCID'});
+        achievements.codeSchool = snapshotFactory({id: 'bobCSID'});
+        deps.$services.codeCombat.fetchBadges.withArgs('bobCCID').returns(Promise.resolve([{}, {}]));
+        deps.$services.codeSchool.fetchBadges.withArgs('bobCSID').returns(Promise.resolve([{}]));
+
+        return achievements.badgeCount().then(counts => {
+          expect(counts.singPath).to.be(4);
+          expect(counts.codeCombat).to.be(2);
+          expect(counts.codeSchool).to.be(1);
+          expect(counts.total).to.be(7);
+        });
+      });
+    });
+
+  });
 
   describe('Events', () => {
-    let service, firebase, profiles, singpath, thirdPartyServices, promise, snapshotFactory;
+    let service, firebase, profiles, singpath, thirdPartyServices, promise, logger;
 
     beforeEach(() => {
-      snapshotFactory = (val, key, ref) => ({key: () => key, val: () => val, ref: () => ref});
       firebase = sinon.stub();
       firebase.observe = sinon.stub();
       profiles = {
@@ -37,8 +106,13 @@ describe('classmentors/events', () => {
       promise.all = sinon.stub();
       promise.resolve = sinon.stub();
       promise.reject = sinon.stub();
+      logger = {
+        debug: sinon.stub(),
+        info: sinon.stub(),
+        error: sinon.stub()
+      };
 
-      service = new events.Events(firebase, profiles, singpath, thirdPartyServices, promise);
+      service = new events.Events(firebase, profiles, singpath, thirdPartyServices, promise, logger);
     });
 
     it('should set services', () => {
@@ -126,42 +200,14 @@ describe('classmentors/events', () => {
         tasks$.onCompleted();
       });
 
-      it('should allow to test if there are any SingPath tasks', done => {
-        const t1 = {someTaskId: {}, someOtherTaskId: {serviceId: 'codeSchool'}};
+      it('should allow to test if there are any task requiring a badge', done => {
+        const t1 = {someTaskId: {}, someOtherTaskId: {}};
         const t2 = {someTaskId: {}, someOtherTaskId: {serviceId: 'singPath'}};
-        const update$ = service.tasks('someEventId').filter(t => t.hasSingPathTasks()).toArray();
+        const update$ = service.tasks('someEventId').filter(t => t.requiresBadges()).toArray();
 
         update$.subscribe(tasks => {
           expect(tasks).to.have.length(1);
           expect(tasks[0].val()).to.be(t2);
-        }, done, done);
-        tasks$.onNext(snapshotFactory(t1));
-        tasks$.onNext(snapshotFactory(t2));
-        tasks$.onCompleted();
-      });
-
-      it('should allow to test if there are any Code Combat tasks', done => {
-        const t1 = {someTaskId: {}, someOtherTaskId: {serviceId: 'codeSchool'}};
-        const t2 = {someTaskId: {}, someOtherTaskId: {serviceId: 'codeCombat'}};
-        const update$ = service.tasks('someEventId').filter(t => t.hasCodeCombatTasks()).toArray();
-
-        update$.subscribe(tasks => {
-          expect(tasks).to.have.length(1);
-          expect(tasks[0].val()).to.be(t2);
-        }, done, done);
-        tasks$.onNext(snapshotFactory(t1));
-        tasks$.onNext(snapshotFactory(t2));
-        tasks$.onCompleted();
-      });
-
-      it('should allow to test if there are any Code School tasks', done => {
-        const t1 = {someTaskId: {}, someOtherTaskId: {serviceId: 'codeSchool'}};
-        const t2 = {someTaskId: {}, someOtherTaskId: {serviceId: 'singPath'}};
-        const update$ = service.tasks('someEventId').filter(t => t.hasCodeSchoolTasks()).toArray();
-
-        update$.subscribe(tasks => {
-          expect(tasks).to.have.length(1);
-          expect(tasks[0].val()).to.be(t1);
         }, done, done);
         tasks$.onNext(snapshotFactory(t1));
         tasks$.onNext(snapshotFactory(t2));
@@ -311,161 +357,186 @@ describe('classmentors/events', () => {
     });
 
     describe('participantAchievements', () => {
-      let requirements$, spSolutions$, serviceDetails$;
+      let publicId, requiresBadges$;
+      let spProblems$, ccDetails$, csDetails$;
+      let complete;
 
       beforeEach(() => {
-        requirements$ = new Rx.Subject();
-        spSolutions$ = new Rx.Subject();
-        serviceDetails$ = new Rx.Subject();
+        publicId = 'bob';
+        spProblems$ = new Rx.Subject();
+        ccDetails$ = new Rx.Subject();
+        csDetails$ = new Rx.Subject();
+        requiresBadges$ = new Rx.Subject();
 
-        service.$singpath.profiles.getSolutions.returns(spSolutions$);
-        service.$profiles.getServiceDetails.returns(serviceDetails$);
+        service.$singpath.profiles.getSolutions.withArgs(publicId).returns(spProblems$);
+        service.$profiles.getServiceDetails.withArgs(publicId, 'codeCombat').returns(ccDetails$);
+        service.$profiles.getServiceDetails.withArgs(publicId, 'codeSchool').returns(csDetails$);
+
+        complete = () => {
+          requiresBadges$.onCompleted();
+          spProblems$.onCompleted();
+          ccDetails$.onCompleted();
+          csDetails$.onCompleted();
+        };
       });
 
       afterEach(() => {
-        requirements$.onCompleted();
-        spSolutions$.onCompleted();
-        serviceDetails$.onCompleted();
+        complete();
       });
 
-      it('should initiate singpath, code combat and code school required data', done => {
-        service.participantAchievements('somePublicId', requirements$).toArray().subscribe(sequences => {
-          expect(sequences).to.have.length(1);
-          // the properties exist but are set to undefined.
-          // `null` would be a value. `undefined` means it hasn't be fetched.
-          expect(sequences[0]).to.have.property('spProblems');
-          expect(sequences[0]).to.have.property('codeCombat');
-          expect(sequences[0]).to.have.property('codeSchool');
-          expect(sequences[0].spProblems).to.be(undefined);
-          expect(sequences[0].codeCombat).to.be(undefined);
-          expect(sequences[0].codeSchool).to.be(undefined);
-        }, done, done);
+      it('should emit empty Achievements obj when the badges are not required', done => {
+        service.participantAchievements(publicId, requiresBadges$).map(
+          achievements => {
+            expect(achievements.publicId).to.be(publicId);
+            expect(achievements.spProblems).to.be(undefined);
+            expect(achievements.codeCombat).to.be(undefined);
+            expect(achievements.codeSchool).to.be(undefined);
+          }
+        ).toArray().subscribe(
+          sequence => {
+            expect(sequence).to.have.length(1);
+            done();
+          },
+          done
+        );
 
-        requirements$.onNext({
-          spProblems: false,
-          codeCombat: false,
-          codeSchool: false
-        });
-        requirements$.onCompleted();
+        requiresBadges$.onNext(false);
+        complete();
       });
 
-      it('should get singpath profile solution when required', done => {
-        const paths1 = {somePathId: {}};
-        const paths2 = {somePathId: {}};
+      it('should emit Achievements obj with singpath problems when badges are required', done => {
+        const spProblems = snapshotFactory({});
 
-        service.participantAchievements('somePublicId', requirements$).toArray().subscribe(sequences => {
-          expect(sequences).to.have.length(3);
-          expect(sequences[0].spProblems).to.be(undefined);
-          expect(sequences[1].spProblems.val()).to.be(paths1);
-          expect(sequences[2].spProblems.val()).to.be(paths2);
-          sinon.assert.calledOnce(service.$singpath.profiles.getSolutions);
-          sinon.assert.calledWithExactly(service.$singpath.profiles.getSolutions, 'somePublicId');
-        }, done, done);
+        service.participantAchievements(publicId, requiresBadges$).map(
+          achievements => {
+            expect(achievements.publicId).to.be(publicId);
+            expect(achievements.spProblems).to.be(spProblems);
+          }
+        ).toArray().subscribe(
+          sequence => {
+            expect(sequence).to.have.length(1);
+            done();
+          },
+          done
+        );
 
-        requirements$.onNext({
-          spProblems: false,
-          codeCombat: false,
-          codeSchool: false
-        });
-        requirements$.onNext({
-          spProblems: true,
-          codeCombat: false,
-          codeSchool: false
-        });
-        spSolutions$.onNext(snapshotFactory(paths1));
-        spSolutions$.onNext(snapshotFactory(paths2));
-        requirements$.onCompleted();
-        spSolutions$.onCompleted();
+        requiresBadges$.onNext(true);
+        spProblems$.onNext(spProblems);
+        ccDetails$.onNext(snapshotFactory({}));
+        csDetails$.onNext(snapshotFactory({}));
+        complete();
       });
 
-      it('should get code combat details when required', done => {
-        const details1 = null;
-        const details2 = {id: 'bob'};
+      it('should emit Achievements obj with code combat details when badges are required', done => {
+        const ccDetails = snapshotFactory({});
 
-        service.participantAchievements('somePublicId', requirements$).toArray().subscribe(sequences => {
-          expect(sequences).to.have.length(3);
-          expect(sequences[0].codeCombat).to.be(undefined);
-          expect(sequences[1].codeCombat.val()).to.be(details1);
-          expect(sequences[2].codeCombat.val()).to.be(details2);
-          sinon.assert.calledOnce(service.$profiles.getServiceDetails);
-          sinon.assert.calledWithExactly(service.$profiles.getServiceDetails, 'somePublicId', 'codeCombat');
-        }, done, done);
+        service.participantAchievements(publicId, requiresBadges$).map(
+          achievements => {
+            expect(achievements.publicId).to.be(publicId);
+            expect(achievements.codeCombat).to.be(ccDetails);
+          }
+        ).toArray().subscribe(
+          sequence => {
+            expect(sequence).to.have.length(1);
+            done();
+          },
+          done
+        );
 
-        requirements$.onNext({
-          spProblems: false,
-          codeCombat: false,
-          codeSchool: false
-        });
-        requirements$.onNext({
-          spProblems: false,
-          codeCombat: true,
-          codeSchool: false
-        });
-        serviceDetails$.onNext(snapshotFactory(details1));
-        serviceDetails$.onNext(snapshotFactory(details2));
-        requirements$.onCompleted();
-        serviceDetails$.onCompleted();
+        requiresBadges$.onNext(true);
+        spProblems$.onNext(snapshotFactory({}));
+        ccDetails$.onNext(ccDetails);
+        csDetails$.onNext(snapshotFactory({}));
+        complete();
       });
 
-      it('should get code school details when required', done => {
-        const details1 = null;
-        const details2 = {id: 'bob'};
+      it('should emit Achievements obj with code school details when badges are required', done => {
+        const csDetails = snapshotFactory({});
 
-        service.participantAchievements('somePublicId', requirements$).toArray().subscribe(sequences => {
-          expect(sequences).to.have.length(3);
-          expect(sequences[0].codeSchool).to.be(undefined);
-          expect(sequences[1].codeSchool.val()).to.be(details1);
-          expect(sequences[2].codeSchool.val()).to.be(details2);
-          sinon.assert.calledOnce(service.$profiles.getServiceDetails);
-          sinon.assert.calledWithExactly(service.$profiles.getServiceDetails, 'somePublicId', 'codeSchool');
-        }, done, done);
+        service.participantAchievements(publicId, requiresBadges$).map(
+          achievements => {
+            expect(achievements.publicId).to.be(publicId);
+            expect(achievements.codeSchool).to.be(csDetails);
+          }
+        ).toArray().subscribe(
+          sequence => {
+            expect(sequence).to.have.length(1);
+            done();
+          },
+          done
+        );
 
-        requirements$.onNext({
-          spProblems: false,
-          codeCombat: false,
-          codeSchool: false
-        });
-        requirements$.onNext({
-          spProblems: false,
-          codeCombat: false,
-          codeSchool: true
-        });
-        serviceDetails$.onNext(snapshotFactory(details1));
-        serviceDetails$.onNext(snapshotFactory(details2));
-        requirements$.onCompleted();
-        serviceDetails$.onCompleted();
+        requiresBadges$.onNext(true);
+        spProblems$.onNext(snapshotFactory({}));
+        ccDetails$.onNext(snapshotFactory({}));
+        csDetails$.onNext(csDetails);
+        complete();
+      });
+
+      it('should emit Achievements obj each time a service details get updated', done => {
+        const csDetails = snapshotFactory({});
+
+        service.participantAchievements(publicId, requiresBadges$).map(
+          achievements => {
+            expect(achievements.publicId).to.be(publicId);
+            expect(achievements.codeSchool).to.be(csDetails);
+          }
+        ).toArray().subscribe(
+          sequence => {
+            expect(sequence).to.have.length(2);
+            done();
+          },
+          done
+        );
+
+        requiresBadges$.onNext(true);
+        spProblems$.onNext(snapshotFactory({}));
+        ccDetails$.onNext(snapshotFactory({}));
+        csDetails$.onNext(csDetails);
+        csDetails$.onNext(csDetails);
+        complete();
       });
     });
 
     describe('monitorParticipantSolutions', () => {
-      let eventId, publicId, tasks$, progress$, requirements$;
+      let eventId, publicId, tasks$, progress$, requiresBadges$;
       let achievements$, solutions$;
-      let tasks, progress, achievements, solution;
+      let tasks, progress, achievements;
       let emit, complete;
       let makeSolution;
 
       beforeEach(() => {
         eventId = 'someEventId';
         publicId = 'bob';
+        tasks = {};
+        progress = {};
+        achievements = {};
         tasks$ = new Rx.ReplaySubject(1);
         progress$ = new Rx.ReplaySubject(1);
-        requirements$ = {};
+        requiresBadges$ = {};
         solutions$ = new Rx.Subject();
 
         achievements$ = new Rx.Subject();
-        sinon.stub(service, 'participantAchievements').returns(achievements$);
         sinon.stub(service, 'participantSolutions').returns(solutions$);
         achievements = {
           spProblems: snapshotFactory({}),
           codeCombat: snapshotFactory({}),
-          codeSchool: snapshotFactory({})
+          codeSchool: snapshotFactory({}),
+          badgeCount: () => Promise.resolve({
+            singPath: 1,
+            codeCombat: 2,
+            codeSchool: 4,
+            total: 7
+          })
         };
+
+        sinon.stub(service, 'participantAchievements').returns(achievements$);
+        sinon.stub(service, 'timer').returns(Rx.Observable.just(0));
 
         emit = () => {
           tasks$.onNext(snapshotFactory(tasks, eventId));
           progress$.onNext(progress);
           achievements$.onNext(achievements);
-          solutions$.onNext(solution);
         };
         complete = () => {
           tasks$.onCompleted();
@@ -484,16 +555,16 @@ describe('classmentors/events', () => {
 
       it('should get the participant achievements', () => {
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         );
 
         sinon.assert.calledOnce(service.participantAchievements);
-        sinon.assert.calledWithExactly(service.participantAchievements, publicId, requirements$);
+        sinon.assert.calledWithExactly(service.participantAchievements, publicId, requiresBadges$);
       });
 
       it('should get the the participant solution', done => {
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         ).toArray().subscribe(() => {
           sinon.assert.calledOnce(service.participantSolutions);
           sinon.assert.calledWithExactly(service.participantSolutions, eventId, publicId);
@@ -508,17 +579,21 @@ describe('classmentors/events', () => {
         };
 
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         ).toArray().subscribe(sequence => {
           expect(sequence).to.have.length(1);
           expect(sequence[0]['classMentors/eventProgress/someEventId/bob/someTaskId/completed']).to.be(true);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/singPath']).to.be(undefined);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeCombat']).to.be(undefined);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeSchool']).to.be(undefined);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/total']).to.be(undefined);
         }, done, done);
 
         // should skip
         progress = {};
-        solution = makeSolution('', 'someTaskId');
-        solution = makeSolution('bar', 'someMissingTaskId');
         emit();
+        solutions$.onNext(makeSolution('', 'someTaskId'));
+        solutions$.onNext(makeSolution('bar', 'someMissingTaskId'));
 
         // should emit
         solutions$.onNext(makeSolution('foo', 'someTaskId'));
@@ -535,17 +610,21 @@ describe('classmentors/events', () => {
         };
 
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         ).toArray().subscribe(sequence => {
           expect(sequence).to.have.length(1);
           expect(sequence[0]['classMentors/eventProgress/someEventId/bob/someTaskId/completed']).to.be(true);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/singPath']).to.be(undefined);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeCombat']).to.be(undefined);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeSchool']).to.be(undefined);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/total']).to.be(undefined);
         }, done, done);
 
         // should skip
         progress = {};
-        solution = makeSolution('', 'someTaskId');
-        solution = makeSolution('bar', 'someMissingTaskId');
         emit();
+        solutions$.onNext(makeSolution('', 'someTaskId'));
+        solutions$.onNext(makeSolution('bar', 'someMissingTaskId'));
 
         // should emit
         solutions$.onNext(makeSolution('http://github.com/foo', 'someTaskId'));
@@ -567,34 +646,41 @@ describe('classmentors/events', () => {
             badge: {id: 'someOtherBadgeId'}
           }
         };
-        achievements.spProblems = {};
-        achievements.codeCombat = {id: 'bobCCID'};
-        achievements.codeSchool = {id: 'bobCSID'};
-        service.$services.codeCombat.fetchBadges.withArgs('bobCCID').returns(
+        achievements.spProblems = snapshotFactory({});
+        achievements.codeCombat = snapshotFactory({id: 'bobCCID'});
+        achievements.codeSchool = snapshotFactory({id: 'bobCSID'});
+        achievements.getBadges = sinon.stub();
+        achievements.getBadges.returns(Promise.resolve([]));
+        achievements.getBadges.withArgs('codeCombat').returns(
           Promise.resolve([{id: 'someBadgeId'}])
         );
 
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         ).toArray().subscribe(sequence => {
-          expect(sequence).to.have.length(3);
+          expect(sequence).to.have.length(2);
           expect(sequence[0]['classMentors/eventProgress/someEventId/bob/someSingpathTaskId/completed']).to.be(true);
-          expect(sequence[1]['classMentors/eventProgress/someEventId/bob/someCodeCombatTaskId/completed']).to.be(true);
-          expect(sequence[2]['classMentors/eventProgress/someEventId/bob/someCodeSchoolTaskId/completed']).to.be(true);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/singPath']).to.be(1);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeCombat']).to.be(2);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeSchool']).to.be(4);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/total']).to.be(7);
+          expect(sequence[1]['classMentors/eventProgress/someEventId/bob/someCodeSchoolTaskId/completed']).to.be(true);
+          expect(sequence[1]['classMentors/eventRankings/someEventId/bob/singPath']).to.be(1);
+          expect(sequence[1]['classMentors/eventRankings/someEventId/bob/codeCombat']).to.be(2);
+          expect(sequence[1]['classMentors/eventRankings/someEventId/bob/codeSchool']).to.be(4);
+          expect(sequence[1]['classMentors/eventRankings/someEventId/bob/total']).to.be(7);
         }, done, done);
 
         emit();
         solutions$.onNext(makeSolution(true, 'someSingpathTaskId'));
-        solutions$.onNext(makeSolution(true, 'someCodeCombatTaskId'));
         solutions$.onNext(makeSolution(true, 'someCodeSchoolTaskId'));
 
         // should skip
         progress$.onNext({
           someSingpathTaskId: {completed: true},
-          someCodeCombatTaskId: {completed: true},
           someCodeSchoolTaskId: {completed: true}
         });
-        solutions$.onNext(makeSolution(true, 'someCodeCombatTaskId'));
+        solutions$.onNext(makeSolution(true, 'someCodeSchoolTaskId'));
         solutions$.onNext(makeSolution(true, 'someOtherServiceTaskId'));
         solutions$.onNext(makeSolution(true, 'someOtherTaskId'));
         complete();
@@ -616,10 +702,14 @@ describe('classmentors/events', () => {
         };
 
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         ).toArray().subscribe(sequence => {
           expect(sequence).to.have.length(1);
           expect(sequence[0]['classMentors/eventProgress/someEventId/bob/someTaskId/completed']).to.be(true);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/singPath']).to.be(1);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeCombat']).to.be(2);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeSchool']).to.be(4);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/total']).to.be(7);
         }, done, done);
 
         emit();
@@ -642,16 +732,20 @@ describe('classmentors/events', () => {
             badge: {id: 'someOtherBadgeId'}
           }
         };
-        achievements.codeCombat = {id: 'bobCCID'};
-        service.$services.codeCombat.fetchBadges.returns(
+        achievements.codeCombat = snapshotFactory({id: 'bobCCID'});
+        achievements.getBadges = sinon.stub().withArgs('codeCombat').returns(
           Promise.resolve([{id: 'someBadgeId'}])
         );
 
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         ).toArray().subscribe(sequence => {
           expect(sequence).to.have.length(1);
           expect(sequence[0]['classMentors/eventProgress/someEventId/bob/someTaskId/completed']).to.be(true);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/singPath']).to.be(1);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeCombat']).to.be(2);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/codeSchool']).to.be(4);
+          expect(sequence[0]['classMentors/eventRankings/someEventId/bob/total']).to.be(7);
         }, done, done);
 
         emit();
@@ -671,13 +765,13 @@ describe('classmentors/events', () => {
         progress = {};
 
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         ).toArray().subscribe(sequence => {
           expect(sequence).to.have.length(0);
         }, done, done);
 
-        solution = makeSolution('foo', 'someTaskId');
         emit();
+        solutions$.onNext(makeSolution('foo', 'someTaskId'));
         complete();
       });
 
@@ -688,13 +782,13 @@ describe('classmentors/events', () => {
         progress = {};
 
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         ).toArray().subscribe(sequence => {
           expect(sequence).to.have.length(0);
         }, done, done);
 
-        solution = makeSolution('foo', 'someTaskId');
         emit();
+        solutions$.onNext(makeSolution('foo', 'someTaskId'));
         complete();
       });
 
@@ -705,13 +799,44 @@ describe('classmentors/events', () => {
         progress = {someTaskId: {completed: true}};
 
         service.monitorParticipantSolutions(
-          eventId, publicId, tasks$, progress$, requirements$
+          eventId, publicId, tasks$, progress$, requiresBadges$
         ).toArray().subscribe(sequence => {
           expect(sequence).to.have.length(1);
         }, done, done);
 
-        solution = makeSolution('foo', 'someTaskId');
         emit();
+        solutions$.onNext(makeSolution('foo', 'someTaskId'));
+        complete();
+      });
+
+      it('should retry making the patch it fails', done => {
+        tasks = {
+          'someTaskId': {
+            serviceId: 'singPath',
+            singPathProblem: {
+              path: {id: 'somePathId'},
+              level: {id: 'someLevelId'},
+              problem: {id: 'someProblemId'}
+            }
+          }
+        };
+        achievements.spProblems = {
+          hasSolved: sinon.stub()
+        };
+        achievements.spProblems.hasSolved.onFirstCall().throws();
+        achievements.spProblems.hasSolved.onSecondCall().throws();
+        achievements.spProblems.hasSolved.onThirdCall().returns(true);
+
+        service.monitorParticipantSolutions(
+          eventId, publicId, tasks$, progress$, requiresBadges$
+        ).toArray().subscribe(sequence => {
+          sinon.assert.calledTwice(service.timer);
+          expect(sequence).to.have.length(1);
+          expect(sequence[0]['classMentors/eventProgress/someEventId/bob/someTaskId/completed']).to.be(true);
+        }, done, done);
+
+        emit();
+        solutions$.onNext(makeSolution(true, 'someTaskId'));
         complete();
       });
 
@@ -743,9 +868,7 @@ describe('classmentors/events', () => {
           resources.push(tasks$, progress$, removedParticipants$, newParticipants$, solutionsPathes$);
 
           tasks = {
-            hasSingPathTasks: sinon.stub().returns(false),
-            hasCodeCombatTasks: sinon.stub().returns(false),
-            hasCodeSchoolTasks: sinon.stub().returns(false)
+            requiresBadges: sinon.stub().returns(false)
           };
           progress = {};
 
@@ -832,9 +955,7 @@ describe('classmentors/events', () => {
           return Rx.Observable.combineLatest(tasks$, progress$, required$).flatMap(arr => {
             expect(arr[0]).to.be(stub.tasks);
             expect(arr[1]).to.be(stub.progress.bob);
-            expect(arr[2].spProblems).to.be(false);
-            expect(arr[2].codeCombat).to.be(false);
-            expect(arr[2].codeSchool).to.be(false);
+            expect(arr[2]).to.be(false);
             done();
             return Rx.Observable.empty();
           });
@@ -870,13 +991,13 @@ describe('classmentors/events', () => {
 
         service.monitorParticipantSolutions = function(eventId, publicId, tasks$, progress$, required$) {
           return required$.flatMap(required => {
-            expect(required.spProblems).to.be(true);
+            expect(required).to.be(true);
             done();
             return Rx.Observable.empty();
           });
         };
 
-        stub.tasks.hasSingPathTasks.returns(true);
+        stub.tasks.requiresBadges.returns(true);
         stub.start();
         stub.newParticipants$.onNext(snapshotFactory({}, 'bob'));
       });
@@ -888,13 +1009,13 @@ describe('classmentors/events', () => {
 
         service.monitorParticipantSolutions = function(eventId, publicId, tasks$, progress$, required$) {
           return required$.flatMap(required => {
-            expect(required.codeCombat).to.be(true);
+            expect(required).to.be(true);
             done();
             return Rx.Observable.empty();
           });
         };
 
-        stub.tasks.hasCodeCombatTasks.returns(true);
+        stub.tasks.requiresBadges.returns(true);
         stub.start();
         stub.newParticipants$.onNext(snapshotFactory({}, 'bob'));
       });
@@ -906,13 +1027,13 @@ describe('classmentors/events', () => {
 
         service.monitorParticipantSolutions = function(eventId, publicId, tasks$, progress$, required$) {
           return required$.flatMap(required => {
-            expect(required.codeSchool).to.be(true);
+            expect(required).to.be(true);
             done();
             return Rx.Observable.empty();
           });
         };
 
-        stub.tasks.hasCodeSchoolTasks.returns(true);
+        stub.tasks.requiresBadges.returns(true);
         stub.start();
         stub.newParticipants$.onNext(snapshotFactory({}, 'bob'));
       });
