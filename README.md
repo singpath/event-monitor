@@ -61,13 +61,13 @@ Optional arguments:
   -s, --silent          print only error messages
   -i ID, --firebase-id ID
                         ID of of the firebase DB to watch
-                        (default: singpath-play)
+                        (default: singpath)
   -a SECRET, --firebase-secret SECRET
                         Firebase auth secret
-                        (default: xxxx)
+                        (default: null)
   -p ID, --event-public-id ID
                         Owner of the events to watch
-                        (default: dino)
+                        (default: null)
   --list-only           print only events that would be watched.
 
 Environment variables:
