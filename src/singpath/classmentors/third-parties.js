@@ -161,10 +161,6 @@ exports.CodeCombat = class CodeCombat extends ThirdParty {
       }).filter(
         badge => badge !== undefined
       );
-    }).catch(err => {
-      this.$log.error(`Failed to fetch code combat badges for ${userId}`);
-      this.$log.error(err);
-      return [];
     });
   }
 };
@@ -214,11 +210,7 @@ exports.CodeSchool = class CodeSchool extends ThirdParty {
       }).filter(
         badge => badge && badge.id
       )
-    ).catch(err => {
-      this.$log.error(`Failed to fetch code combat badges for ${userId}`);
-      this.$log.error(err);
-      return [];
-    });
+    );
   }
 
   /**

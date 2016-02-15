@@ -5,6 +5,42 @@
 
 const Rx = require('rx');
 
+
+/**
+ * create a squence suitable for Rx.Observable.prototype.retryWhen.
+ *
+ * Will delay retries, increment the delay and stop retrying after some attempts.
+ *
+ * Delay = Math.pow(retryCount * opts.baseIncrement, opts.exponentIncrement) * opts.baseDelay;
+ *
+ * @param  {Observable} failure$ Stream error.
+ * @param  {Object}     opts
+ * @return {Observable}
+ */
+function retrySequence(failure$, opts) {
+  opts = Object.assign({}, {
+    maxRetries: 3,
+    baseDelay: 1000,
+    baseIncrement: 1,
+    exponentIncrement: 1,
+    timer: Rx.Observable.timer,
+    logger: console
+  }, opts);
+
+  return Rx.Observable.zip(
+    Rx.Observable.range(1, opts.maxRetries),
+    failure$,
+    function resultSelector(retries, err) {
+      return {retries, err};
+    }
+  ).flatMap(failure => {
+    const delay = Math.pow(failure.retries * opts.baseIncrement, opts.exponentIncrement) * opts.baseDelay;
+
+    opts.logger.info('%s\nRetrying in %s seconds', failure.err.toString(), delay);
+
+    return opts.timer(delay);
+  });
+}
 class Wrapper {
 
   constructor(snapshot) {
@@ -235,12 +271,13 @@ const REQUIREMENTS = ['spProblems', 'codeCombat', 'codeSchool'];
 
 exports.Events = class Events {
 
-  constructor(firebase, profiles, singpath, services, promise) {
+  constructor(firebase, profiles, singpath, services, promise, logger) {
     this.$firebase = firebase;
     this.$profiles = profiles;
     this.$singpath = singpath;
     this.$services = services;
     this.$q = promise;
+    this.$logger = logger;
   }
 
   eventsByOwner(publicId) {
@@ -336,15 +373,23 @@ exports.Events = class Events {
         ctx => !ctx.shouldSkip()
       );
 
-      const updatedSolution$ = solutionContext$.flatMap(
+      const checkedSolution$ = solutionContext$.flatMap(
         ctx => solution.solves(ctx.task, ctx.achievements).then(
           isSolved => ctx.with({isSolved})
         )
-      ).filter(
-        ctx => ctx.isChanged()
-      );
+      ).retryWhen(attempts$ => retrySequence(attempts$, {
+        baseDelay: 1000,
+        exponentIncrement: 3,
+        maxRetries: 5,
+        timer: delay => this.timer(delay),
+        logger: this.$logger
+      }));
 
-      return updatedSolution$.map(ctx => ctx.patch());
+      return checkedSolution$.filter(
+        ctx => ctx.isChanged()
+      ).flatMap(
+        ctx => ctx.patch()
+      );
     });
 
     // keep the shared context stream open while someone subscribes to the the solutions
