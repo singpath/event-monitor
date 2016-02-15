@@ -252,7 +252,7 @@ function login(firebase, logger, opts) {
       queue: null
     };
     const userToken = tokenGenerator.createToken(data, {
-      debug: opts.debug || opts.debugFirebase
+      debug: opts.debugFirebase
     });
 
     logger.info('Token created.');
