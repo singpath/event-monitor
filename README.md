@@ -90,8 +90,7 @@ Config:
 
 ## TODO
 
-1. Add logging messages;
-2. update ranking;
-3. update all participant progress and ranking every hours (in case some student
+1. Add more logging messages;
+2. update all participant progress and ranking every hours (in case some student
    forget to report new badges);
-4. add docker image.
+3. add docker image.
