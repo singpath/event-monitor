@@ -15,7 +15,7 @@ exports.start = function start(publicId, firebase, opts) {
   opts = opts || {};
 
   const cm = classMentors.create(firebase, opts);
-  const events$ = cm.events.eventsByOwner(publicId).tap(e => {
+  const events$ = cm.events.eventsByOwner(publicId).doOnNext(e => {
     if (e.active) {
       cm.$logger.info('Watching "%s" (%s).', e.details.title, e.eventId);
     } else {
