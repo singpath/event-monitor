@@ -31,7 +31,7 @@ exports.ClassMentors = class ClassMentors {
       all[s.serviceId] = s;
       return all;
     });
-    this.events = new events.Events(firebase, profiles, singpath, this.services, promise, logger);
+    this.events = new events.Events(firebase, this.profiles, this.singpath, this.services, promise, logger);
   }
 
 };

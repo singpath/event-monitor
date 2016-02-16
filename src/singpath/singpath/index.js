@@ -159,6 +159,6 @@ exports.Singpath = class Singpath {
 
   constructor(firebase) {
     this.$firebase = firebase;
-    this.profiles = new Profiles(firebase);
+    this.$profiles = new Profiles(firebase);
   }
 };

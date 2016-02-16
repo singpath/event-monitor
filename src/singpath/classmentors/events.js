@@ -548,7 +548,7 @@ exports.Events = class Events {
       }
 
       return Rx.Observable.combineLatest(
-        this.$singpath.profiles.getSolutions(publicId),
+        this.$singpath.$profiles.getSolutions(publicId),
         this.$profiles.getServiceDetails(publicId, 'codeCombat'),
         this.$profiles.getServiceDetails(publicId, 'codeSchool'),
         function resultSelector(spProblems, codeCombat, codeSchool) {
