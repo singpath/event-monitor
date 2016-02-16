@@ -21,7 +21,7 @@ exports.start = function start(publicId, firebase, opts) {
     } else {
       cm.$logger.info('Stopping watching %s (%s).', e.details.name, e.eventId);
     }
-  });
+  }).share();
 
   if (opts.listOnly) {
     cm.$logger.info('Listing user\'s events only...');
