@@ -90,7 +90,7 @@ describe('classmentors/events', () => {
         getServiceDetails: sinon.stub()
       };
       singpath = {
-        profiles: {
+        $profiles: {
           getSolutions: sinon.stub()
         }
       };
@@ -368,7 +368,7 @@ describe('classmentors/events', () => {
         csDetails$ = new Rx.Subject();
         requiresBadges$ = new Rx.Subject();
 
-        service.$singpath.profiles.getSolutions.withArgs(publicId).returns(spProblems$);
+        service.$singpath.$profiles.getSolutions.withArgs(publicId).returns(spProblems$);
         service.$profiles.getServiceDetails.withArgs(publicId, 'codeCombat').returns(ccDetails$);
         service.$profiles.getServiceDetails.withArgs(publicId, 'codeSchool').returns(csDetails$);
 
