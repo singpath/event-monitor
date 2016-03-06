@@ -188,7 +188,7 @@ class Solution extends Wrapper {
   _hasBadge(solution, task, achievements) {
     const badgeId = task && task.badge && task.badge.id;
     const serviceId = task && task.serviceId;
-    const details = achievements && achievements[serviceId] && achievements[serviceId].val();
+    const details = achievements && achievements[serviceId] && achievements[serviceId].val() || {};
 
     if (!badgeId || !serviceId || !details.id) {
       return Promise.resolve(false);
