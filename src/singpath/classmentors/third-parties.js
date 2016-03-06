@@ -167,9 +167,9 @@ exports.CodeCombat = class CodeCombat extends ThirdParty {
 
 exports.CodeSchool = class CodeSchool extends ThirdParty {
   constructor(firebase, logger, promise, http, cacheFactory) {
-    super('codeCombat', firebase, logger, promise);
+    super('codeSchool', firebase, logger, promise);
     this.$http = http;
-    this.$cache = cacheFactory('CodeCombat', {ttl: 60000});
+    this.$cache = cacheFactory('CodeSchool', {ttl: 60000});
   }
 
   fetchProfile(userId) {

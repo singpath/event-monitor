@@ -30,7 +30,7 @@ exports.ClassMentors = class ClassMentors {
     ].reduce((all, s) => {
       all[s.serviceId] = s;
       return all;
-    });
+    }, {});
     this.events = new events.Events(firebase, this.profiles, this.singpath, this.services, promise, logger);
   }
 
