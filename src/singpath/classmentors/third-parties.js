@@ -134,7 +134,7 @@ exports.CodeCombat = class CodeCombat extends ThirdParty {
    * @return {Promise}       Promise resolving to the users code combat badges.
    */
   fetchBadges(userId) {
-    if (userId) {
+    if (!userId) {
       return this.$q.resolve([]);
     }
 
