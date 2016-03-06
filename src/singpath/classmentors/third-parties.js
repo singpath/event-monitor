@@ -192,12 +192,13 @@ exports.CodeSchool = class CodeSchool extends ThirdParty {
    * @return {Promise}       Promise resolving to the users code school badges.
    */
   fetchBadges(userId) {
+
     if (!userId) {
       return this.$q.resolve([]);
     }
 
     return this.fetchProfile(userId).then(
-      csProfile => csProfile.badges || []
+      csProfile => csProfile && csProfile.badges || []
     ).then(
       badges => badges.map(badge => {
         //jscs:disable requireCamelCaseOrUpperCaseIdentifiers
