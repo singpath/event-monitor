@@ -7,9 +7,9 @@
 const Rx = require('rx');
 
 const classMentors = require('./singpath/classmentors/index');
-const firebase = require('./singpath/firebase.js');
+const rxFirebase = require('rx-firebase');
 
-exports.firebaseFactory = firebase.factory;
+exports.firebaseFactory = rxFirebase.factory;
 
 exports.start = function start(publicId, firebase, opts) {
   opts = opts || {};

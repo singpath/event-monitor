@@ -29,6 +29,7 @@
     "firebase-token-generator": "^2.0.0",
     "lodash.camelcase": "^4.0.1",
     "request": "^2.69.0",
-    "rx": "^4.0.7"
+    "rx": "^4.0.7",
+    "rx-firebase": "^0.1.0"
   }
 }
