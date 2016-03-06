@@ -114,7 +114,7 @@ exports.CodeCombat = class CodeCombat extends ThirdParty {
 
   fetchProfile(userId) {
     if (!userId) {
-      return this.$q.reject(ERR_NO_CODE_COMBAT_USER_ID);
+      return this.$q.reject(new Error(ERR_NO_CODE_COMBAT_USER_ID));
     }
 
     return this.$http.get(
