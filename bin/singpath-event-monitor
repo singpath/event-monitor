@@ -243,6 +243,7 @@ function login(firebase, logger, opts) {
     if (user === null) {
       return Promise.reject(new Error(ERR_NO_USER));
     }
+
     const data = {
       uid: user.id,
       email: user.email,

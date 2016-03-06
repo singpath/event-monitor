@@ -6,7 +6,7 @@
 const Rx = require('rx');
 
 /**
- * create a squence suitable for Rx.Observable.prototype.retryWhen.
+ * create a squence suitable for `Rx.Observable.prototype.retryWhen`.
  *
  * Will delay retries, increment the delay and stop retrying after some attempts.
  *
