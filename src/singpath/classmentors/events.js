@@ -5,6 +5,85 @@
 
 const Rx = require('rx');
 
+/**
+ * create a squence suitable for `Rx.Observable.prototype.retryWhen`.
+ *
+ * Will delay retries, increment the delay and stop retrying after some attempts.
+ *
+ * Delay = Math.pow(retryCount * opts.baseIncrement, opts.exponentIncrement) * opts.baseDelay;
+ *
+ * @param  {Observable} failure$ Stream error.
+ * @param  {Object}     opts
+ * @return {Observable}
+ */
+function retrySequence(failure$, opts) {
+  opts = Object.assign({}, {
+    maxRetries: 3,
+    baseDelay: 1000,
+    baseIncrement: 1,
+    exponentIncrement: 1,
+    timer: Rx.Observable.timer,
+    logger: console
+  }, opts);
+
+  return Rx.Observable.zip(
+    Rx.Observable.range(1, opts.maxRetries),
+    failure$,
+    function resultSelector(retries, err) {
+      return {retries, err};
+    }
+  ).flatMap(failure => {
+    const delay = Math.pow(failure.retries * opts.baseIncrement, opts.exponentIncrement) * opts.baseDelay;
+
+    opts.logger.info('%s\nRetrying in %s seconds', failure.err.toString(), delay);
+
+    return opts.timer(delay);
+  });
+}
+
+const servicesKey = Symbol('services');
+
+class Achievements {
+
+  constructor(publicId, deps) {
+    this.publicId = publicId;
+    this.spProblems = undefined;
+    this.codeCombat = undefined;
+    this.codeSchool = undefined;
+
+    this[servicesKey] = deps.$services;
+  }
+
+  getBadges(serviceId) {
+    const details = this[serviceId].val() || {};
+
+    return this[servicesKey][serviceId].fetchBadges(details.id);
+  }
+
+  badgeCount() {
+    return Promise.all([
+      this.spProblems.problemCount().then(count => count.solved),
+      this.getBadges('codeCombat').then(badges => badges.length),
+      this.getBadges('codeSchool').then(badges => badges.length)
+    ]).then(results => {
+      const singPath = results[0];
+      const codeCombat = results[1];
+      const codeSchool = results[2];
+      const total = singPath + codeCombat + codeSchool;
+
+      return {singPath, codeCombat, codeSchool, total};
+    });
+  }
+
+  static empty(publicId) {
+    return {
+      publicId,
+      getBadges: () => Promise.resolve(),
+      badgeCount: () => Promise.resolve()
+    };
+  }
+}
+
 class Wrapper {
 
   constructor(snapshot) {
@@ -31,36 +110,19 @@ class Tasks extends Wrapper {
     this.eventId = eventId;
   }
 
-  hasSingPathTasks() {
+  requiresBadges() {
     const tasks = this.val() || {};
 
     return Object.keys(tasks).some(
-      k => tasks[k] && tasks[k].serviceId === 'singPath'
-    );
-  }
-
-  hasCodeCombatTasks() {
-    const tasks = this.val() || {};
-
-    return Object.keys(tasks).some(
-      k => tasks[k] && tasks[k].serviceId === 'codeCombat'
-    );
-  }
-
-  hasCodeSchoolTasks() {
-    const tasks = this.val() || {};
-
-    return Object.keys(tasks).some(
-      k => tasks[k] && tasks[k].serviceId === 'codeSchool'
+      k => tasks[k] && tasks[k].serviceId
     );
   }
 }
 
 class Solution extends Wrapper {
 
-  constructor(eventId, publicId, snapshot, services) {
+  constructor(eventId, publicId, snapshot) {
     super(snapshot);
-    this.$services = services;
     this.eventId = eventId;
     this.publicId = publicId;
   }
@@ -108,32 +170,32 @@ class Solution extends Wrapper {
       return false;
     }
 
-    let isSolved = false;
-
     if (serviceId === 'singPath') {
-      isSolved = !!achievements.spProblems;
+      return !!achievements.spProblems;
     } else if (serviceId === 'codeCombat') {
-      isSolved = !!achievements.codeCombat.id;
+      const val = achievements.codeCombat.val() || {};
+
+      return !!val.id;
     } else if (serviceId === 'codeSchool') {
-      isSolved = !!achievements.codeSchool.id;
+      const val = achievements.codeSchool.val() || {};
+
+      return !!val.id;
     }
 
-    return isSolved;
+    return false;
   }
 
   _hasBadge(solution, task, achievements) {
     const badgeId = task && task.badge && task.badge.id;
     const serviceId = task && task.serviceId;
-    const userId = achievements && achievements[serviceId] && achievements[serviceId].id;
+    const details = achievements && achievements[serviceId] && achievements[serviceId].val() || {};
 
-    if (!badgeId || !serviceId || !userId) {
+    if (!badgeId || !serviceId || !details.id) {
       return Promise.resolve(false);
     }
 
-    return this.$services[serviceId].fetchBadges(userId).then(
-      badges => badges.some(
-        b => b && b.id === badgeId
-      )
+    return achievements.getBadges(serviceId).then(
+      badges => badges.some(b => b && b.id === badgeId)
     );
   }
 
@@ -220,27 +282,45 @@ class SolutionContext extends Context {
 
   patch() {
     if (!this.eventId || !this.publicId || !this.taskId) {
-      return {};
+      return Promise.reject({});
     }
 
-    return {
+    const data = {
       [`classMentors/eventProgress/${this.eventId}/${this.publicId}/${this.taskId}/completed`]: this.isSolved
     };
+
+    if (!this.task.serviceId) {
+      return Promise.resolve(data);
+    }
+    return this.achievements.badgeCount().then(
+      stats => {
+        Object.keys(stats).forEach(serviceId => {
+          data[`classMentors/eventRankings/${this.eventId}/${this.publicId}/${serviceId}`] = stats[serviceId];
+        });
+
+        return data;
+      },
+      err => {
+        err.progressPatch = data;
+
+        return Promise.reject(err);
+      }
+    );
   }
 }
 
 exports.Solution = Solution;
-
-const REQUIREMENTS = ['spProblems', 'codeCombat', 'codeSchool'];
+exports.Achievements = Achievements;
 
 exports.Events = class Events {
 
-  constructor(firebase, profiles, singpath, services, promise) {
+  constructor(firebase, profiles, singpath, services, promise, logger) {
     this.$firebase = firebase;
     this.$profiles = profiles;
     this.$singpath = singpath;
     this.$services = services;
     this.$q = promise;
+    this.$logger = logger;
   }
 
   eventsByOwner(publicId) {
@@ -273,15 +353,9 @@ exports.Events = class Events {
     return newEventIds$.flatMap(eventId => {
       const tasks$ = this.tasks(eventId).shareReplay(1);
       const progress$ = this.progress(eventId).shareReplay(1);
-      const required$ = tasks$.map(tasks => {
-        return {
-          spProblems: tasks.hasSingPathTasks(),
-          codeCombat: tasks.hasCodeCombatTasks(),
-          codeSchool: tasks.hasCodeSchoolTasks()
-        };
-      }).distinctUntilChanged(
-        r => REQUIREMENTS.map(k => r[k]).toString()
-      ).shareReplay(1);
+      const requiresBadges$ = tasks$.map(
+        tasks => tasks.requiresBadges()
+      ).distinctUntilChanged().shareReplay(1);
       const removedParticipants$ = this.removedParticipants(eventId).share();
       const eventClosed$ = closedEventIds$.filter(id => id === eventId).take(1);
 
@@ -302,7 +376,7 @@ exports.Events = class Events {
         ).take(1);
 
         return this.monitorParticipantSolutions(
-          eventId, publicId, tasks$, participantProgress$, required$
+          eventId, publicId, tasks$, participantProgress$, requiresBadges$
         ).takeUntil(participantHasLeft$);
       });
 
@@ -310,19 +384,16 @@ exports.Events = class Events {
     }).takeUntil(stop$);
   }
 
-  monitorParticipantSolutions(eventId, publicId, tasks$, progress$, required$) {
-    const achievements$ = this.participantAchievements(publicId, required$);
+  monitorParticipantSolutions(eventId, publicId, tasks$, progress$, requiresBadges$) {
+    const achievements$ = this.participantAchievements(publicId, requiresBadges$);
     const context$ = Rx.Observable.combineLatest(
       tasks$,
       progress$,
-      achievements$
-    ).map(data => ({
-      tasks: data[0],
-      progress: data[1],
-      achievements: data[2],
-      eventId,
-      publicId
-    })).shareReplay(1);
+      achievements$,
+      function resultSelector(tasks, progress, achievements) {
+        return {tasks, progress, achievements, eventId, publicId};
+      }
+    ).shareReplay(1);
 
     const solutionPatchesFactory = () => this.participantSolutions(eventId, publicId).flatMap(solution => {
       const taskId = solution.key();
@@ -336,15 +407,27 @@ exports.Events = class Events {
         ctx => !ctx.shouldSkip()
       );
 
-      const updatedSolution$ = solutionContext$.flatMap(
+      const checkedSolution$ = solutionContext$.flatMap(
         ctx => solution.solves(ctx.task, ctx.achievements).then(
           isSolved => ctx.with({isSolved})
         )
-      ).filter(
-        ctx => ctx.isChanged()
-      );
+      ).retryWhen(attempts$ => retrySequence(attempts$, {
+        baseDelay: 1000,
+        exponentIncrement: 3,
+        maxRetries: 5,
+        timer: delay => this.timer(delay),
+        logger: this.$logger
+      }));
 
-      return updatedSolution$.map(ctx => ctx.patch());
+      return checkedSolution$.filter(
+        ctx => ctx.isChanged()
+      ).flatMap(
+        ctx => ctx.patch().catch(err => {
+          this.$logger.error('Failed to create patch: %s', err.toString());
+          // just skip the patch, or part of it, if there's an error.
+          return err.progressPatch || {};
+        })
+      );
     });
 
     // keep the shared context stream open while someone subscribes to the the solutions
@@ -353,6 +436,10 @@ exports.Events = class Events {
       () => context$.subscribe(),
       solutionPatchesFactory
     );
+  }
+
+  timer(delay) {
+    return Rx.Observable.timer(delay);
   }
 
   /**
@@ -450,36 +537,27 @@ exports.Events = class Events {
         };
       })
     ).map(
-      snapshot => new Solution(eventId, participantId, snapshot, this.$services)
+      snapshot => new Solution(eventId, participantId, snapshot)
     );
   }
 
-  participantAchievements(publicId, required$) {
-    const handlers = {
-      spProblems: () => this.$singpath.profiles.getSolutions(publicId),
-      codeCombat: () => this.$profiles.getServiceDetails(publicId, 'codeCombat'),
-      codeSchool: () => this.$profiles.getServiceDetails(publicId, 'codeSchool')
-    };
+  participantAchievements(publicId, requiresBadges$) {
+    return requiresBadges$.flatMapLatest(required => {
+      if (!required) {
+        return Rx.Observable.just(Achievements.empty(publicId));
+      }
 
-    return required$.flatMapLatest(required => {
-      const os$ = REQUIREMENTS.map(k => {
-        return required[k] ? handlers[k]() : Rx.Observable.return();
-      });
+      return Rx.Observable.combineLatest(
+        this.$singpath.$profiles.getSolutions(publicId),
+        this.$profiles.getServiceDetails(publicId, 'codeCombat'),
+        this.$profiles.getServiceDetails(publicId, 'codeSchool'),
+        // resultSelector
+        (spProblems, codeCombat, codeSchool) => {
+          const achievements = new Achievements(publicId, this);
 
-      return Rx.Observable.combineLatest(os$).map(
-        arr => REQUIREMENTS.reduce((achievements, k, i) => {
-          achievements[k] = arr[i];
-          return achievements;
-        }, {})
-      ).filter(achievements => {
-        // if more than one new service are required at the same time,
-        // lets make sure both are ready.
-        const missing = Object.keys(required).filter(
-          k => required[k] && achievements[k] === undefined
-        );
-
-        return missing.length === 0;
-      });
+          return Object.assign(achievements, {spProblems, codeCombat, codeSchool});
+        }
+      );
     });
   }
 

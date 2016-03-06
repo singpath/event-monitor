@@ -28,10 +28,11 @@ exports.factory = function httpFactory(promise) {
         return reject(error);
       }
 
+      const contentType = response.headers['content-type'] || '';
       const resp = {
         status: response.statusCode,
         statusText: response.statusMessage,
-        data: body,
+        data: contentType.startsWith('application/json') ? JSON.parse(body) : body,
         config: config,
         headers: name => response.headers[name]
       };

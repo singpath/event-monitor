@@ -61,13 +61,13 @@ Optional arguments:
   -s, --silent          print only error messages
   -i ID, --firebase-id ID
                         ID of of the firebase DB to watch
-                        (default: singpath-play)
+                        (default: singpath)
   -a SECRET, --firebase-secret SECRET
                         Firebase auth secret
-                        (default: xxxx)
+                        (default: null)
   -p ID, --event-public-id ID
                         Owner of the events to watch
-                        (default: dino)
+                        (default: null)
   --list-only           print only events that would be watched.
 
 Environment variables:
@@ -90,8 +90,7 @@ Config:
 
 ## TODO
 
-1. Add logging messages;
-2. update ranking;
-3. update all participant progress and ranking every hours (in case some student
+1. Add more logging messages;
+2. update all participant progress and ranking every hours (in case some student
    forget to report new badges);
-4. add docker image.
+3. add docker image.

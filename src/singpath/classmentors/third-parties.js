@@ -114,7 +114,7 @@ exports.CodeCombat = class CodeCombat extends ThirdParty {
 
   fetchProfile(userId) {
     if (!userId) {
-      return this.$q.reject(ERR_NO_CODE_COMBAT_USER_ID);
+      return this.$q.reject(new Error(ERR_NO_CODE_COMBAT_USER_ID));
     }
 
     return this.$http.get(
@@ -134,7 +134,7 @@ exports.CodeCombat = class CodeCombat extends ThirdParty {
    * @return {Promise}       Promise resolving to the users code combat badges.
    */
   fetchBadges(userId) {
-    if (userId) {
+    if (!userId) {
       return this.$q.resolve([]);
     }
 
@@ -161,19 +161,15 @@ exports.CodeCombat = class CodeCombat extends ThirdParty {
       }).filter(
         badge => badge !== undefined
       );
-    }).catch(err => {
-      this.$log.error(`Failed to fetch code combat badges for ${userId}`);
-      this.$log.error(err);
-      return [];
     });
   }
 };
 
 exports.CodeSchool = class CodeSchool extends ThirdParty {
   constructor(firebase, logger, promise, http, cacheFactory) {
-    super('codeCombat', firebase, logger, promise);
+    super('codeSchool', firebase, logger, promise);
     this.$http = http;
-    this.$cache = cacheFactory('CodeCombat', {ttl: 60000});
+    this.$cache = cacheFactory('CodeSchool', {ttl: 60000});
   }
 
   fetchProfile(userId) {
@@ -196,12 +192,13 @@ exports.CodeSchool = class CodeSchool extends ThirdParty {
    * @return {Promise}       Promise resolving to the users code school badges.
    */
   fetchBadges(userId) {
+
     if (!userId) {
       return this.$q.resolve([]);
     }
 
     return this.fetchProfile(userId).then(
-      csProfile => csProfile.badges || []
+      csProfile => csProfile && csProfile.badges || []
     ).then(
       badges => badges.map(badge => {
         //jscs:disable requireCamelCaseOrUpperCaseIdentifiers
@@ -214,11 +211,7 @@ exports.CodeSchool = class CodeSchool extends ThirdParty {
       }).filter(
         badge => badge && badge.id
       )
-    ).catch(err => {
-      this.$log.error(`Failed to fetch code combat badges for ${userId}`);
-      this.$log.error(err);
-      return [];
-    });
+    );
   }
 
   /**

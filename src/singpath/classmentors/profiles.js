@@ -11,7 +11,7 @@ exports.Profiles = class Profiles {
 
   getServiceDetails(publicId, serviceId) {
     return this.$firebase(
-      ['classMentors/userProfiles', publicId, 'services', serviceId]
+      ['classMentors/userProfiles', publicId, 'services', serviceId, 'details']
     ).observe('value');
   }
 };
