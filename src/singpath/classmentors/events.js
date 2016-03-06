@@ -551,7 +551,8 @@ exports.Events = class Events {
         this.$singpath.$profiles.getSolutions(publicId),
         this.$profiles.getServiceDetails(publicId, 'codeCombat'),
         this.$profiles.getServiceDetails(publicId, 'codeSchool'),
-        function resultSelector(spProblems, codeCombat, codeSchool) {
+        // resultSelector
+        (spProblems, codeCombat, codeSchool) => {
           const achievements = new Achievements(publicId, this);
 
           return Object.assign(achievements, {spProblems, codeCombat, codeSchool});
