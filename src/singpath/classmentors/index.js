@@ -8,7 +8,6 @@ const singpath = require('../singpath/index');
 const profiles = require('./profiles');
 const thirdParties = require('./third-parties');
 const events = require('./events');
-const utils = require('../utils/index.js');
 
 /**
  * ClassMentors service.
