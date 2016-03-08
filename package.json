@@ -6,9 +6,12 @@
   "scripts": {
     "cover": "istanbul cover ./node_modules/mocha/bin/_mocha tests/index.js --report lcov -- -R spec",
     "coveralls": "istanbul cover ./node_modules/mocha/bin/_mocha tests/index.js --report lcovonly -- -R spec && cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js && rm -rf ./coverage",
-    "lint": "jscs . && eslint src/ tests/",
+    "lint": "jscs . && eslint src/ tests/ e2e/",
     "lint-fix": "jscs . --fix",
-    "test": "mocha tests/index.js"
+    "rules": "singpath-rules compile -o ./rules.json ./rules.legacy.json",
+    "test": "mocha tests/index.js",
+    "test-e2e": "mocha e2e/index.js",
+    "upload-rules-e2e": "npm run rules && firebase deploy:rules -f $SINGPATH_E2E_FIREBASE_ID --token \"$SINGPATH_E2E_FIREBASE_SECRET\""
   },
   "license": "MIT",
   "devDependencies": {
@@ -16,10 +19,13 @@
     "coveralls": "^2.11.6",
     "eslint": "^1.10.3",
     "expect.js": "^0.3.1",
+    "firebase-test": "^0.1.0",
     "istanbul": "^0.4.2",
     "jscs": "^2.9.0",
     "mocha": "^2.4.5",
     "mocha-lcov-reporter": "^1.0.0",
+    "rest-firebase": "^0.2.0",
+    "singpath-rules": "github:singpath/singpath-rules",
     "sinon": "^1.17.3"
   },
   "dependencies": {

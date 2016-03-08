@@ -36,15 +36,3 @@ exports.ClassMentors = class ClassMentors {
 
 };
 
-exports.create = (firebase, opts) => {
-  opts = opts || {};
-
-  const logger = opts.logger || console;
-  const promise = opts.promise || utils.q;
-  const http = opts.http || utils.httpFactory(promise);
-  const cacheFactory = opts.cacheFactory || utils.cacheFactory;
-
-  return new exports.ClassMentors(
-    firebase, logger, promise, http, cacheFactory
-  );
-};

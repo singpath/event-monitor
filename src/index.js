@@ -6,25 +6,34 @@
 
 const Rx = require('rx');
 
-const classMentors = require('./singpath/classmentors/index');
+const utils = require('./singpath/utils/index');
 const rxFirebase = require('rx-firebase');
 
 exports.firebaseFactory = rxFirebase.factory;
 
-exports.start = function start(publicId, firebase, opts) {
-  opts = opts || {};
+exports.start = function start(publicId, opts) {
+  let cm;
 
-  const cm = classMentors.create(firebase, opts);
+  opts = opts || {};
+  if (opts.firebase) {
+    cm = utils.classMentors(opts.firebase, opts);
+  } else if (opts.classMentors) {
+    cm = opts.classMentors;
+  } else {
+    throw new Error('a firebase factory or classMentors service should be provided');
+  }
+
   const events$ = cm.events.eventsByOwner(publicId).doOnNext(e => {
     if (e.active) {
-      cm.$logger.info('Watching "%s" (%s).', e.details.title, e.eventId);
+      cm.$logger.log('Watching "%s" (%s).', e.details.title, e.eventId);
     } else {
-      cm.$logger.info('Stopping watching %s (%s).', e.details.name, e.eventId);
+      cm.$logger.log('Stopping watching %s (%s).', e.details.name, e.eventId);
     }
   }).share();
 
   if (opts.listOnly) {
-    cm.$logger.info('Listing user\'s events only...');
+    cm.$logger.log('Listing user\'s events only...');
+
     return Rx.Observable.merge(
       events$,
       Rx.Observable.interval(1100)
@@ -37,14 +46,14 @@ exports.start = function start(publicId, firebase, opts) {
   const ref = cm.$firebase();
   const origin = ref.toString();
 
-  cm.$logger.info('Starting monitoring events...');
+  cm.$logger.log('Starting monitoring events...');
 
   return patches$.bufferWithTime(500).flatMap(patches => {
     const patch = Object.assign.apply(Object, [{}].concat(patches));
 
-    cm.$logger.debug('patching "%s" with "%j"', origin, patch);
+    cm.$logger.info('patching "%s" with "%j"', origin, patch);
 
-    return ref.update(patch);
-  }).takeLast(1).toPromise();
+    return ref.update(patch).then(() => patch);
+  });
 };
 
