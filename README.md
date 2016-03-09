@@ -94,3 +94,4 @@ Config:
 2. update all participant progress and ranking every hours (in case some student
    forget to report new badges);
 3. add a docker image.
+4. filter event to watch (since a date, or restrict to a maximum number of event).
