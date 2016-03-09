@@ -1,4 +1,7 @@
 node_modules
 coverage
-.sublime-project*
+*.sublime-project
+*.sublime-workspace
 .singpatheventmonitorrc
+rules.legacy.json
+rules.json

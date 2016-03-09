@@ -116,7 +116,9 @@ function main() {
     const listOnly = opts.listOnly;
 
     return login(firebase, logger, opts).then(
-      () => singpathEventMonitor.start(opts.eventPublicId, firebase, {logger, listOnly})
+      () => singpathEventMonitor.start(
+        opts.eventPublicId, {firebase, logger, listOnly}
+      ).takeLast(1).toPromise()
     );
   }).then(
     () => process.exit(0),

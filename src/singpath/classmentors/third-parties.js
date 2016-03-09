@@ -110,6 +110,7 @@ exports.CodeCombat = class CodeCombat extends ThirdParty {
     super('codeCombat', firebase, logger, promise);
     this.$http = http;
     this.$cache = cacheFactory('CodeCombat', {ttl: 60000});
+    this.serverURL = 'https://codecombat.com';
   }
 
   fetchProfile(userId) {
@@ -118,7 +119,7 @@ exports.CodeCombat = class CodeCombat extends ThirdParty {
     }
 
     return this.$http.get(
-      `https://codecombat.com/db/user/${userId}/level.sessions`,{
+      `${this.serverURL}/db/user/${userId}/level.sessions`,{
         params: {project: 'state.complete,levelID,levelName'},
         cache: this.$cache
       }
@@ -170,6 +171,7 @@ exports.CodeSchool = class CodeSchool extends ThirdParty {
     super('codeSchool', firebase, logger, promise);
     this.$http = http;
     this.$cache = cacheFactory('CodeSchool', {ttl: 60000});
+    this.serverURL = 'https://www.codeschool.com';
   }
 
   fetchProfile(userId) {
@@ -178,7 +180,7 @@ exports.CodeSchool = class CodeSchool extends ThirdParty {
     }
 
     return this.$http.get(
-      `https://www.codeschool.com/users/${userId}.json`,
+      `${this.serverURL}/users/${userId}.json`,
       {cache: this.$cache}
     ).then(
       resp => resp.data
