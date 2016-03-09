@@ -29,7 +29,7 @@ Now using node v4.x.x (npm v3.x.x)
 ```shell
 git clone https://github.com/singpath/event-monitor.git
 cd event-monitor
-nvm install
+npm install
 ```
 
 ## Running monitor
