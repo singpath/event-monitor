@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "description": "Monitor the user events",
   "main": "src/index.js",
+  "bin": "./bin/singpath-event-monitor",
+  "directories": {
+    "bin": "./bin",
+    "lib": "./src"
+  },
+  "repository": "github:singpath/event-monitor",
   "scripts": {
     "cover": "istanbul cover ./node_modules/mocha/bin/_mocha tests/index.js --report lcov -- -R spec",
     "coveralls": "istanbul cover ./node_modules/mocha/bin/_mocha tests/index.js --report lcovonly -- -R spec && cat ./coverage/lcov.info | ./node_modules/coveralls/bin/coveralls.js && rm -rf ./coverage",
@@ -37,5 +43,8 @@
     "request": "^2.69.0",
     "rx": "^4.0.7",
     "rx-firebase": "^0.1.0"
+  },
+  "engines" : {
+    "node" : ">=4.0.0"
   }
 }
