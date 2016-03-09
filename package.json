@@ -1,5 +1,5 @@
 {
-  "name": "singpath-monitor",
+  "name": "@singpath/event-monitor",
   "version": "0.1.0",
   "description": "Monitor the user events",
   "main": "src/index.js",
