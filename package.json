@@ -31,7 +31,7 @@
     "mocha": "^2.4.5",
     "mocha-lcov-reporter": "^1.0.0",
     "rest-firebase": "^0.2.0",
-    "singpath-rules": "github:singpath/singpath-rules",
+    "@singpath/rules": "^1.0.1",
     "sinon": "^1.17.3"
   },
   "dependencies": {
